@@ -29,15 +29,15 @@ class GenderRankingWeatherRecommender:
 
     def recommend(self, weather: dict, target_gender: str = "남성", user_id: str = "default_user") -> pd.DataFrame:
         """
-        선택한 성별(남성 또는 여성)의 데이터만 정확히 필터링한 후
-        오늘 날씨(기온/일교차/강수) + 실시간 랭킹 대조 점수를 합산해 추천합니다.
+        개인별 체감 온도 차이를 반영하여 기온 범위를 넉넉하게 매칭합니다.
+        (±1단계는 최적 호환, ±2단계까지 후보군 인정)
         """
         target_bracket = self.get_current_temp_bracket(weather["temp"])
         is_high_diff = weather["temp_diff"] >= 10.0
         is_wet = weather["is_raining_or_snowing"]
         feedback_bonus = self._get_feedback_bonus(user_id)
 
-        # 1. 성별 정확 일치 데이터만 추출 ('전체' 제외)
+        # 선택한 성별 데이터만 필터링
         filtered_df = self.df[self.df["gender"] == target_gender].copy()
 
         scores = []
@@ -51,39 +51,42 @@ class GenderRankingWeatherRecommender:
             realtime_rank = int(row.get("rank", 9999))
             order_rank = int(row.get("order_rank", 100))
 
-            # 2. 기온 매칭 기본 점수
-            if item_bracket == target_bracket:
+            diff = abs(item_bracket - target_bracket)
+
+            # 1. 널널한 기온 구간 매칭
+            if diff == 0:
                 score += 50
                 reason_tags.append("현재 기온 최적")
-            elif abs(item_bracket - target_bracket) == 1:
-                score += 30
-                reason_tags.append("기온 호환")
+            elif diff == 1:
+                score += 40
+                reason_tags.append("체감 기온 호환(±1)")
+            elif diff == 2:
+                score += 15
+                reason_tags.append("체감 기온 허용(±2)")
             else:
-                score -= 40
+                score -= 30  # 3단계 이상 격차만 감점
 
-            # 3. ★ 실시간 랭킹(200위) 대조 가산점 ★
-            if is_ranking and realtime_rank <= 200:
-                # 랭킹 1위 +35점 ~ 200위 +15점
-                rank_bonus = max(15, 35 - int(realtime_rank * 0.1))
+            # 2. 실시간 랭킹 대조 가산점
+            if is_ranking and realtime_rank <= 100:
+                rank_bonus = max(15, 35 - int(realtime_rank * 0.2))
                 score += rank_bonus
                 reason_tags.append(f"실시간 랭킹 {realtime_rank}위🔥")
             else:
-                # 일반 1,000개 상품은 기본 노출 순서에 따라 소폭 가산 (+1 ~ +10점)
-                base_bonus = max(1, 10 - int(order_rank * 0.01))
+                base_bonus = max(1, 10 - int(order_rank * 0.02))
                 score += base_bonus
                 reason_tags.append(f"인기순 #{order_rank}")
 
-            # 4. 일교차 10℃ 이상 시 레이어드 가중치
+            # 3. 일교차 10℃ 이상 레이어드 가중치
             if is_high_diff and row["is_layered"]:
                 score += 25
                 reason_tags.append("일교차 레이어드")
 
-            # 5. 비/눈 올 때 방수/발수 가중치
+            # 4. 강수(비/눈) 방수/발수 가중치
             if is_wet and row["is_waterproof"]:
                 score += 45
                 reason_tags.append("우천 방수 특화☔")
 
-            # 6. 사용자 좋아요/싫어요 반영
+            # 5. 사용자 피드백 반영
             fb_score = feedback_bonus.get(row["item_id"], 0)
             if fb_score != 0:
                 score += fb_score
@@ -95,8 +98,8 @@ class GenderRankingWeatherRecommender:
         filtered_df["score"] = scores
         filtered_df["reason"] = reasons
 
-        # 기온에 맞는 의류 중 점수 높은 순 정렬
-        return filtered_df[filtered_df["score"] > 20].sort_values(
+        # 완화된 점수 커트라인(10점 초과)으로 추천 반환
+        return filtered_df[filtered_df["score"] > 10].sort_values(
             by=["score", "rank", "order_rank"],
             ascending=[False, True, True]
         )
