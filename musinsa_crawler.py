@@ -7,16 +7,48 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
+# musinsa_crawler.py 내부 함수 교체
 def auto_label_from_title(title: str, main_category: str) -> dict:
     title_lower = title.lower()
+
+    # 하의 카테고리일 때 전용 라벨링 (하의 누락 방지 핵심)
+    if main_category == "하의":
+        # 1. 겨울/기모 하의 (1~2단계)
+        if any(w in title_lower for w in ["기모", "융기모", "웜", "플리스팬츠", "패딩팬츠"]):
+            return {"sub_type": "기모팬츠", "temp_bracket": 1, "is_layered": False, "is_waterproof": False, "material": "기모 코튼"}
+        
+        # 2. 여름/반바지/린넨 (7~8단계)
+        if any(w in title_lower for w in ["반바지", "쇼츠", "숏팬츠", "버뮤다", "린넨팬츠", "리넨", "쿨링", "나일론쇼츠"]):
+            is_wp = any(w in title_lower for w in ["나일론", "발수", "방수"])
+            return {"sub_type": "반바지/쇼츠", "temp_bracket": 7, "is_layered": False, "is_waterproof": is_wp, "material": "나일론/면"}
+        
+        # 3. 여성 스커트류
+        if any(w in title_lower for w in ["스커트", "치마", "플리츠", "미니스커트", "롱스커트"]):
+            return {"sub_type": "스커트", "temp_bracket": 5, "is_layered": False, "is_waterproof": False, "material": "폴리/코튼"}
+
+        # 4. 일반 사계절 바지 (슬랙스, 청바지, 카고, 조거, 스웨트팬츠, 일반 팬츠)
+        # 대부분의 바지는 3~6단계(10℃~22℃) 전반에서 착용 가능하므로 대표 5단계로 설정하되
+        # recommender에서 사계절 하의로 폭넓게 인정하도록 설정
+        sub = "팬츠"
+        if any(w in title_lower for w in ["데님", "청바지", "진", "jean"]):
+            sub = "청바지"
+        elif any(w in title_lower for w in ["슬랙스", "트라우저"]):
+            sub = "슬랙스"
+        elif any(w in title_lower for w in ["조거", "스웨트", "트레이닝", "츄리닝"]):
+            sub = "스웨트팬츠"
+        elif any(w in title_lower for w in ["카고", "파라슈트", "워크"]):
+            sub = "카고팬츠"
+
+        return {"sub_type": sub, "temp_bracket": 5, "is_layered": False, "is_waterproof": False, "material": "코튼/데님"}
+
+    # 아우터 및 상의 라벨링 (기존 로직)
     keyword_rules = [
         (["패딩", "푸퍼", "다운", "무스탕", "헤비"], ("패딩", 1, False, True, "다운/나일론")),
-        (["기모", "융기모"], ("기모의류", 1, False, False, "기모 코튼")),
-        (["울코트", "발마칸", "더플", "캐시미어 코트", "핸드메이드 코트"], ("울코트", 2, False, False, "울 혼방")),
+        (["기모", "융기모"], ("기모상의", 1, False, False, "기모 코튼")),
+        (["울코트", "발마칸", "더플", "캐시미어 코트"], ("울코트", 2, False, False, "울 혼방")),
         (["가죽", "레더", "무톤", "라이더"], ("가죽자켓", 2, True, False, "레더")),
         (["플리스", "후리스", "뽀글이"], ("플리스", 2, True, False, "플리스")),
         (["트렌치", "맥코트"], ("트렌치코트", 3, True, False, "코튼/개버딘")),
-        (["트위드"], ("트위드자켓", 3, True, False, "트위드/울")),
         (["야상", "점퍼", "블루종", "바시티", "ma-1"], ("점퍼", 3, True, False, "나일론/폴리")),
         (["바람막이", "윈드브레이커", "아노락", "고어텍스"], ("바람막이", 4, True, True, "나일론(방수/발수)")),
         (["가디건", "볼레로"], ("가디건", 4, True, False, "니트/울")),
@@ -29,17 +61,9 @@ def auto_label_from_title(title: str, main_category: str) -> dict:
         (["셔츠", "남방", "옥스포드"], ("셔츠", 6, True, False, "코튼")),
         (["긴팔", "롱슬리브"], ("긴팔티", 6, False, False, "면")),
         (["크롭", "반팔", "티셔츠", "피케", "폴로"], ("반팔티", 7, False, False, "면/쿨링원단")),
-        (["민소매", "슬리브리스", "나시", "홀터넥"], ("민소매", 8, False, False, "면/린넨")),
+        (["민소매", "슬리브리스", "나시"], ("민소매", 8, False, False, "면/린넨")),
         (["린넨", "리넨"], ("린넨의류", 8, True, False, "린넨")),
-        (["원피스", "미니원피스", "롱원피스"], ("원피스", 6, False, False, "폴리/코튼")),
-        (["롱스커트", "미디스커트", "맥시스커트"], ("롱스커트", 5, False, False, "코튼/폴리")),
-        (["미니스커트", "스커트", "치마", "플리츠"], ("스커트", 6, False, False, "폴리/데님")),
-        (["반바지", "쇼츠", "숏팬츠", "버뮤다", "바이커"], ("반바지", 7, False, False, "면/나일론")),
-        (["데님", "청바지", "진", "부츠컷"], ("청바지", 4, False, False, "데님")),
-        (["슬랙스", "트라우저"], ("슬랙스", 5, False, False, "폴리에스터/레이온")),
-        (["코튼 팬츠", "치노", "카고", "조거", "스웨트팬츠", "파라슈트"], ("면바지", 4, False, False, "코튼/나일론")),
-        (["레인부츠", "장화"], ("레인부츠", 0, False, True, "천연고무/PVC")),
-        (["우산", "양산"], ("우산", 0, False, True, "발수 원단"))
+        (["원피스"], ("원피스", 6, False, False, "폴리/코튼"))
     ]
 
     for keywords, (sub_type, temp_bracket, is_layered, is_waterproof, material) in keyword_rules:
@@ -51,8 +75,8 @@ def auto_label_from_title(title: str, main_category: str) -> dict:
                 "is_layered": is_layered, "is_waterproof": is_waterproof, "material": material
             }
 
-    default_bracket = 4 if main_category == "아우터" else (5 if main_category == "상의" else 4)
-    return {"sub_type": main_category, "temp_bracket": default_bracket, "is_layered": main_category == "아우터", "is_waterproof": False, "material": "혼방"}
+    default_bracket = 4 if main_category == "아우터" else 5
+    return {"sub_type": main_category, "temp_bracket": default_bracket, "is_layered": False, "is_waterproof": False, "material": "혼방"}
 
 class MusinsaRankingCrawler:
     def __init__(self):

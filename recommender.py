@@ -28,10 +28,6 @@ class GenderRankingWeatherRecommender:
         return {k: v * 15 if v > 0 else v * 20 for k, v in scores.items()}
 
     def recommend(self, weather: dict, target_gender: str = "남성", user_id: str = "default_user") -> pd.DataFrame:
-        """
-        개인별 체감 온도 차이를 반영하여 기온 범위를 넉넉하게 매칭합니다.
-        (±1단계는 최적 호환, ±2단계까지 후보군 인정)
-        """
         target_bracket = self.get_current_temp_bracket(weather["temp"])
         is_high_diff = weather["temp_diff"] >= 10.0
         is_wet = weather["is_raining_or_snowing"]
@@ -53,18 +49,34 @@ class GenderRankingWeatherRecommender:
 
             diff = abs(item_bracket - target_bracket)
 
-            # 1. 널널한 기온 구간 매칭
-            if diff == 0:
-                score += 50
-                reason_tags.append("현재 기온 최적")
-            elif diff == 1:
-                score += 40
-                reason_tags.append("체감 기온 호환(±1)")
-            elif diff == 2:
-                score += 15
-                reason_tags.append("체감 기온 허용(±2)")
+            # [수정된 기온 매칭 로직: 하의 사계절 특성 반영]
+            if row["category"] == "하의":
+                if row.get("sub_type") == "반바지/쇼츠" and target_bracket <= 2:
+                    score -= 40
+                elif row.get("sub_type") == "기모팬츠" and target_bracket >= 6:
+                    score -= 40
+                else:
+                    if diff <= 1:
+                        score += 50
+                        reason_tags.append("현재 기온 최적")
+                    elif diff <= 3:
+                        score += 35
+                        reason_tags.append("사계절 데일리 팬츠")
+                    else:
+                        score += 20
+                        reason_tags.append("기본 매칭")
             else:
-                score -= 30  # 3단계 이상 격차만 감점
+                if diff == 0:
+                    score += 50
+                    reason_tags.append("현재 기온 최적")
+                elif diff == 1:
+                    score += 40
+                    reason_tags.append("체감 기온 호환(±1)")
+                elif diff == 2:
+                    score += 15
+                    reason_tags.append("체감 기온 허용(±2)")
+                else:
+                    score -= 30
 
             # 2. 실시간 랭킹 대조 가산점
             if is_ranking and realtime_rank <= 100:
@@ -98,7 +110,6 @@ class GenderRankingWeatherRecommender:
         filtered_df["score"] = scores
         filtered_df["reason"] = reasons
 
-        # 완화된 점수 커트라인(10점 초과)으로 추천 반환
         return filtered_df[filtered_df["score"] > 10].sort_values(
             by=["score", "rank", "order_rank"],
             ascending=[False, True, True]
