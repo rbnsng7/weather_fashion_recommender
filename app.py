@@ -7,10 +7,6 @@ import streamlit as st
 from weather_api import WeatherClient
 from recommender import GenderRankingWeatherRecommender
 
-# app.py 사이드바 상단에 추가
-if os.path.exists(DB_PATH):
-    mod_time = datetime.fromtimestamp(os.path.getmtime(DB_PATH)).strftime("%Y-%m-%d %H:%M")
-    st.sidebar.caption(f"🕒 데이터 최신 갱신일시: {mod_time}")
 
 # --- 1. 페이지 설정 ---
 st.set_page_config(
@@ -42,6 +38,12 @@ def log_feedback(user_id: str, item_id: int, gender: str, temp: float, weather_m
 
 # --- 2. 사이드바 설정 (시뮬레이션 제거) ---
 st.sidebar.header("👤 맞춤 설정")
+
+# app.py 사이드바 상단에 추가
+if os.path.exists(DB_PATH):
+    mod_time = datetime.fromtimestamp(os.path.getmtime(DB_PATH)).strftime("%Y-%m-%d %H:%M")
+    st.sidebar.caption(f"🕒 데이터 최신 갱신일시: {mod_time}")
+
 user_id = st.sidebar.text_input("사용자 ID", value="user_01")
 
 selected_gender = st.sidebar.radio(
