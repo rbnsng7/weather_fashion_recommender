@@ -145,11 +145,15 @@ class GenderSplitCrossReferenceCrawler:
                             continue
 
                         img_tag = card.find("img")
-                        title_text = link.get("aria-label") or link.get_text(strip=True)
+                        
+                        # 1. 무신사 title 속성 최우선 확인 및 시각장애인용 태그 필터링
+                        title_text = link.get("title") or link.get("aria-label") or link.get_text(strip=True)
+                        title_text = title_text.replace("상품 상세로 이동", "").strip()
+                        
                         if not title_text and img_tag:
-                            title_text = img_tag.get("alt", "")
+                            title_text = img_tag.get("alt", "").replace("상품 상세로 이동", "").strip()
 
-                        if not title_text or len(title_text) < 3:
+                        if not title_text or len(title_text) < 2:
                             continue
 
                         brand_tag = card.select_one(".brand, .item_title, a[href*='/brand/']")
