@@ -19,13 +19,21 @@ class GenderRankingWeatherRecommender:
         elif temp <= 27: return 7
         else: return 8
 
+        # recommender.py _get_feedback_bonus 수정
     def _get_feedback_bonus(self, user_id: str = "default_user") -> dict:
-        if not os.path.exists(self.feedback_path): return {}
-        fb_df = pd.read_csv(self.feedback_path)
-        user_fb = fb_df[fb_df["user_id"] == user_id]
-        if user_fb.empty: return {}
-        scores = user_fb.groupby("item_id")["rating"].sum().to_dict()
-        return {k: v * 15 if v > 0 else v * 20 for k, v in scores.items()}
+        if not os.path.exists(self.feedback_path): 
+            return {}
+        try:
+            fb_df = pd.read_csv(self.feedback_path)
+            if fb_df.empty: 
+                return {}
+            user_fb = fb_df[fb_df["user_id"] == user_id]
+            if user_fb.empty: 
+                return {}
+            scores = user_fb.groupby("item_id")["rating"].sum().to_dict()
+            return {k: v * 15 if v > 0 else v * 20 for k, v in scores.items()}
+        except Exception:
+            return {}
 
     def recommend(self, weather: dict, target_gender: str = "남성", user_id: str = "default_user") -> pd.DataFrame:
         target_bracket = self.get_current_temp_bracket(weather["temp"])
@@ -109,6 +117,10 @@ class GenderRankingWeatherRecommender:
 
         filtered_df["score"] = scores
         filtered_df["reason"] = reasons
+
+                # recommender.py recommend() 함수 하단 수정
+        filtered_df["rank"] = filtered_df["rank"].fillna(9999)
+        filtered_df["order_rank"] = filtered_df["order_rank"].fillna(999)
 
         return filtered_df[filtered_df["score"] > 10].sort_values(
             by=["score", "rank", "order_rank"],

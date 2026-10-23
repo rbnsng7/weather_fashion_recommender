@@ -6,6 +6,7 @@ import streamlit as st
 
 from weather_api import WeatherClient
 from recommender import GenderRankingWeatherRecommender
+from ai_stylist import GroqAIStylist
 
 
 # --- 1. 페이지 설정 ---
@@ -36,10 +37,9 @@ def log_feedback(user_id: str, item_id: int, gender: str, temp: float, weather_m
         new_row.to_csv(FEEDBACK_PATH, mode="w", header=True, index=False, encoding="utf-8-sig")
 
 
-# --- 2. 사이드바 설정 (시뮬레이션 제거) ---
+# --- 2. 사이드바 설정 ---
 st.sidebar.header("👤 맞춤 설정")
 
-# app.py 사이드바 상단에 추가
 if os.path.exists(DB_PATH):
     mod_time = datetime.fromtimestamp(os.path.getmtime(DB_PATH)).strftime("%Y-%m-%d %H:%M")
     st.sidebar.caption(f"🕒 데이터 최신 갱신일시: {mod_time}")
@@ -58,8 +58,8 @@ st.sidebar.divider()
 st.sidebar.header("🌤️ 지역 선택")
 city = st.sidebar.selectbox("지역 선택", ["Busan", "Seoul", "Incheon", "Daegu", "Jeju"])
 
-# app.py 3번 영역: 실시간 날씨 API 연동 부분 교체
-# ----------------------------------------------------
+
+# --- 3. 실시간 날씨 API 연동 ---
 if "OPENWEATHER_API_KEY" not in st.secrets:
     st.error("🔑 Streamlit Secrets에 `OPENWEATHER_API_KEY`가 설정되어 있지 않습니다.")
     st.info("로컬 환경: `.streamlit/secrets.toml` 파일에 키를 추가해 주세요.\n\n클라우드 배포 환경: App Settings -> Secrets에 키를 입력해 주세요.")
@@ -68,7 +68,6 @@ if "OPENWEATHER_API_KEY" not in st.secrets:
 API_KEY = st.secrets["OPENWEATHER_API_KEY"]
 client = WeatherClient(api_key=API_KEY)
 weather = client.get_weather_by_city(city)
-# ----------------------------------------------------
 
 
 # --- 4. 메인 날씨 요약 배너 ---
@@ -98,7 +97,7 @@ elif weather["is_raining_or_snowing"]:
 st.divider()
 
 
-# --- 5. 카테고리별 맞춤 의류 추천 카드 (아우터, 상의, 하의) ---
+# --- 5. 카테고리별 맞춤 의류 추출 및 안전 Fallback 처리 ---
 if not os.path.exists(DB_PATH):
     st.error("의류 데이터베이스(`data/clothes_db.csv`)가 없습니다. 터미널에서 `python bulk_crawler.py`를 먼저 실행해 주세요.")
     st.stop()
@@ -106,6 +105,34 @@ if not os.path.exists(DB_PATH):
 recommender = GenderRankingWeatherRecommender(DB_PATH, FEEDBACK_PATH)
 rec_df = recommender.recommend(weather, target_gender=selected_gender, user_id=user_id)
 
+# 기온 조건에 따른 추천 결과가 0건일 때 기본 인기 상품으로 안전 전환
+if rec_df.empty:
+    st.warning("⚠️ 현재 기상 조건에 정확히 부합하는 의류를 찾지 못했습니다. 기본 인기 상품을 불러옵니다.")
+    fallback_df = recommender.df[recommender.df["gender"] == selected_gender].copy()
+    fallback_df["score"] = 50
+    fallback_df["reason"] = "기본 인기 아이템"
+    rec_df = fallback_df.head(9)
+
+
+# --- 6. 🤖 Groq AI 스타일리스트 브리핑 (Secrets 기반) ---
+st.subheader(f"🤖 Groq AI 스타일리스트의 [{selected_gender}] 추천 코디")
+
+groq_key = st.secrets.get("GROQ_API_KEY", "")
+
+if not groq_key:
+    st.info("💡 Streamlit Secrets에 `GROQ_API_KEY`를 추가하시면 날씨 맞춤형 AI 코디 브리핑을 확인할 수 있습니다.")
+else:
+    if st.button("✨ 오늘 날씨 맞춤 AI 원픽 코디 받기", use_container_width=True):
+        with st.spinner("AI 스타일리스트가 실제 기상 데이터와 추천 의류를 분석 중입니다..."):
+            stylist = GroqAIStylist(api_key=groq_key)
+            advice = stylist.generate_styling_advice(weather, selected_gender, rec_df)
+            st.success("🎯 **오늘의 스타일링 제안**")
+            st.markdown(advice)
+
+st.divider()
+
+
+# --- 7. 카테고리별 맞춤 의류 추천 카드 (아우터, 상의, 하의) ---
 categories = ["아우터", "상의", "하의"]
 st.subheader(f"👕 [{selected_gender}] 카테고리별 추천 TOP 3")
 
@@ -119,10 +146,18 @@ for idx, cat in enumerate(categories):
             st.caption(f"현재 기온에 알맞은 {cat} 상품이 없습니다.")
         for _, item in cat_items.iterrows():
             with st.container(border=True):
-                if item["is_ranking_item"]:
-                    st.markdown(f"🔥 **{selected_gender} 실시간 랭킹 {int(item['rank'])}위** | `{item['brand']}`")
+                is_ranking = bool(item.get("is_ranking_item", False))
+                rank_val = item.get("rank", 9999)
+                order_val = item.get("order_rank", 100)
+
+                # 결측치(NaN) 방지 처리
+                rank_display = int(rank_val) if pd.notnull(rank_val) else 9999
+                order_display = int(order_val) if pd.notnull(order_val) else 100
+
+                if is_ranking and rank_display <= 100:
+                    st.markdown(f"🔥 **{selected_gender} 실시간 랭킹 {rank_display}위** | `{item['brand']}`")
                 else:
-                    st.markdown(f"✨ **{selected_gender} 인기 #{int(item['order_rank'])}** | `{item['brand']}`")
+                    st.markdown(f"✨ **{selected_gender} 인기 #{order_display}** | `{item['brand']}`")
 
                 st.image(item["image_url"], use_container_width=True)
                 st.markdown(f"**{item['name']}**")
