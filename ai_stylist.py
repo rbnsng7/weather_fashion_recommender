@@ -9,27 +9,8 @@ class GroqAIStylist:
         self.models_url = "https://api.groq.com/openai/v1/models"
 
     def _get_active_model(self) -> str:
-        headers = {"Authorization": f"Bearer {self.api_key}"}
-        # 구형 Llama3 단종에 대비해 가장 안정적인 Mixtral을 최후의 보루로 설정
-        fallback_model = "mixtral-8x7b-32768"
-        
-        try:
-            res = requests.get(self.models_url, headers=headers, timeout=5)
-            if res.status_code == 200:
-                model_ids = [m["id"] for m in res.json().get("data", [])]
-                
-                # 현재 Groq에서 100% 공식 지원하는 최신/안정화 텍스트 모델 목록
-                preferred_models = [
-                    "llama-3.3-70b-versatile",
-                    "gemma2-9b-it",
-                    "mixtral-8x7b-32768"
-                ]
-                for p in preferred_models:
-                    if p in model_ids:
-                        return p
-        except Exception:
-            pass
-        return fallback_model
+        # 터미널에서 확인한 정확한 모델 ID를 쌍따옴표 안에 그대로 붙여넣으세요.
+        return "openai/gpt-oss-20b"
 
     def generate_styling_advice(self, weather: dict, gender: str, rec_df: pd.DataFrame) -> str:
         if not self.api_key:
