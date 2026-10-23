@@ -3,10 +3,9 @@ name: Musinsa Daily Auto Crawler
 
 on:
   schedule:
-    # 매일 한국 시간(KST) 오전 6시 (UTC 21시) 자동 실행
-    - cron: '0 21 * * *'
-  # 필요할 때 GitHub 웹에서 수동으로도 즉시 실행 가능
-  workflow_dispatch:
+    # KST 기준: 06:00, 12:00, 18:00, 24:00 (UTC: 21, 03, 09, 15)
+    - cron: '0 3,9,15,21 * * *'
+  workflow_dispatch: # 수동 실행 유지
 
 jobs:
   crawl-and-update:
