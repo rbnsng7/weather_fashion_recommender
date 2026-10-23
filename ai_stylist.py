@@ -40,11 +40,12 @@ class GroqAIStylist:
         top = top_row.iloc[0] if not top_row.empty else None
         bottom = bottom_row.iloc[0] if not bottom_row.empty else None
 
-        if not all([outer, top, bottom]):
+        # [수정된 부분] Pandas Series는 all()로 검사하면 에러가 나므로 명시적으로 None인지 확인합니다.
+        if outer is None or top is None or bottom is None:
             return "⚠️ 전체 셋업(아우터, 상의, 하의) 데이터가 부족합니다."
 
         # ==========================================================
-        # 2. [핵심] 파이썬을 이용해 브랜드명과 상품명을 화면에 100% 강제 고정
+        # 2. 파이썬을 이용해 브랜드명과 상품명을 화면에 100% 강제 고정
         # ==========================================================
         setup_display = (
             f"🎯 **오늘의 [{gender}] 원픽 셋업**\n"
@@ -94,7 +95,6 @@ class GroqAIStylist:
             
             ai_advice = res.json()["choices"][0]["message"]["content"]
             
-            # 파이썬으로 만든 확정 텍스트 아래에 AI의 브리핑을 합쳐서 반환
             return f"{setup_display}{ai_advice}"
             
         except Exception as e:
