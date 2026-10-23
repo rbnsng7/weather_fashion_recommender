@@ -7,6 +7,11 @@ import streamlit as st
 from weather_api import WeatherClient
 from recommender import GenderRankingWeatherRecommender
 
+# app.py 사이드바 상단에 추가
+if os.path.exists(DB_PATH):
+    mod_time = datetime.fromtimestamp(os.path.getmtime(DB_PATH)).strftime("%Y-%m-%d %H:%M")
+    st.sidebar.caption(f"🕒 데이터 최신 갱신일시: {mod_time}")
+
 # --- 1. 페이지 설정 ---
 st.set_page_config(
     page_title="무신사 실시간 랭킹 × 날씨 맞춤 코디 추천",
