@@ -6,7 +6,36 @@ class GroqAIStylist:
     def __init__(self, api_key: str):
         self.api_key = api_key.strip() if api_key else ""
         self.chat_url = "https://api.groq.com/openai/v1/chat/completions"
-        self.model = "llama-3.1-8b-instant"
+        self.models_url = "https://api.groq.com/openai/v1/models"
+
+    def _get_active_model(self) -> str:
+        """Groq API에서 현재 계정이 사용 가능한 텍스트 모델을 동적으로 조회"""
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        try:
+            res = requests.get(self.models_url, headers=headers, timeout=5)
+            if res.status_code == 200:
+                data = res.json().get("data", [])
+                model_ids = [m["id"] for m in data]
+                
+                # 우선 사용할 추천 모델 순위
+                priority_list = [
+                    "llama-3.3-70b-versatile",
+                    "llama3-8b-8192",
+                    "llama3-70b-8192",
+                    "mixtral-8x7b-32768",
+                    "gemma2-9b-it"
+                ]
+                for p in priority_list:
+                    if p in model_ids:
+                        return p
+
+                # 우선순위 외 음성/임베딩 모델 제외한 첫 번째 모델 선택
+                for m_id in model_ids:
+                    if not any(skip in m_id.lower() for skip in ["whisper", "embed", "guard"]):
+                        return m_id
+        except Exception:
+            pass
+        return "llama3-8b-8192"
 
     def generate_styling_advice(self, weather: dict, gender: str, rec_df: pd.DataFrame) -> str:
         if not self.api_key:
@@ -24,7 +53,6 @@ class GroqAIStylist:
         top_item = top_row.iloc[0] if not top_row.empty else None
         bottom_item = bottom_row.iloc[0] if not bottom_row.empty else None
 
-        # 비상 대체 텍스트 구성
         fixed_outer = f"[{outer_item['brand']}] {outer_item['name']} ({outer_item['material']})" if outer_item is not None else "기본 아우터"
         fixed_top = f"[{top_item['brand']}] {top_item['name']} ({top_item['material']})" if top_item is not None else "기본 상의"
         fixed_bottom = f"[{bottom_item['brand']}] {bottom_item['name']} ({bottom_item['material']})" if bottom_item is not None else "기본 하의"
@@ -44,8 +72,10 @@ class GroqAIStylist:
 [작성 요구사항]
 1. 위 셋업의 실제 브랜드명과 상품명을 정확히 언급하며 베스트 코디 조합을 제안하세요.
 2. 현재 기온({temp}℃)에 이 옷의 소재와 구성이 왜 어울리는지 2문장으로 설명하세요.
-3. 어울리는 신발이나 이너 매치 팁을 1문장 추가하세요.
+3. 어울리는 신발이나 레이어드 연출 팁을 1문장 추가하세요.
 4. 불릿 포인트(-) 형식으로 깔끔하게 4줄 내외로 작성하세요."""
+
+        active_model = self._get_active_model()
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -53,7 +83,7 @@ class GroqAIStylist:
         }
 
         payload = {
-            "model": self.model,
+            "model": active_model,
             "messages": [
                 {"role": "system", "content": "당신은 무신사 실시간 랭킹 의류를 매칭해 주는 패션 에디터입니다."},
                 {"role": "user", "content": prompt}
@@ -65,7 +95,7 @@ class GroqAIStylist:
         try:
             res = requests.post(self.chat_url, headers=headers, json=payload, timeout=15)
             if res.status_code != 200:
-                return f"❌ Groq 응답 오류 ({res.status_code}): {res.text}"
+                return f"❌ Groq 응답 오류 ({res.status_code}) [모델: {active_model}]: {res.text}"
             
             result_json = res.json()
             return result_json["choices"][0]["message"]["content"]
