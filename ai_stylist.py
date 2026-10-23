@@ -10,20 +10,19 @@ class GroqAIStylist:
 
     def _get_active_model(self) -> str:
         headers = {"Authorization": f"Bearer {self.api_key}"}
-        # 가장 오래되고 안정적인 Groq 기본 모델을 최후의 보루(Fallback)로 설정
-        fallback_model = "llama3-8b-8192"
+        # 구형 Llama3 단종에 대비해 가장 안정적인 Mixtral을 최후의 보루로 설정
+        fallback_model = "mixtral-8x7b-32768"
         
         try:
             res = requests.get(self.models_url, headers=headers, timeout=5)
             if res.status_code == 200:
                 model_ids = [m["id"] for m in res.json().get("data", [])]
                 
-                # 에러를 일으킨 llama-3.1-8b-instant를 삭제하고 확실한 텍스트 모델만 배치
+                # 현재 Groq에서 100% 공식 지원하는 최신/안정화 텍스트 모델 목록
                 preferred_models = [
                     "llama-3.3-70b-versatile",
-                    "mixtral-8x7b-32768",
                     "gemma2-9b-it",
-                    "llama3-8b-8192"
+                    "mixtral-8x7b-32768"
                 ]
                 for p in preferred_models:
                     if p in model_ids:
