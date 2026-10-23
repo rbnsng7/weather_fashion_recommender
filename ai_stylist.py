@@ -9,33 +9,33 @@ class GroqAIStylist:
         self.models_url = "https://api.groq.com/openai/v1/models"
 
     def _get_active_model(self) -> str:
-        """Groq API에서 현재 계정이 사용 가능한 텍스트 모델을 동적으로 조회"""
+        """한국어를 잘 구사하는 고성능 모델만 엄선하여 동적 선택"""
         headers = {"Authorization": f"Bearer {self.api_key}"}
         try:
             res = requests.get(self.models_url, headers=headers, timeout=5)
             if res.status_code == 200:
                 data = res.json().get("data", [])
                 model_ids = [m["id"] for m in data]
-                
-                # 우선 사용할 추천 모델 순위
-                priority_list = [
+
+                # 한국어를 매끄럽게 처리하는 검증된 모델 우선순위 (외계어 뿜는 8B는 배제)
+                korean_supported_models = [
                     "llama-3.3-70b-versatile",
-                    "llama3-8b-8192",
-                    "llama3-70b-8192",
+                    "llama-3.1-70b-versatile",
                     "mixtral-8x7b-32768",
                     "gemma2-9b-it"
                 ]
-                for p in priority_list:
-                    if p in model_ids:
-                        return p
+                for model_candidate in korean_supported_models:
+                    if model_candidate in model_ids:
+                        return model_candidate
 
-                # 우선순위 외 음성/임베딩 모델 제외한 첫 번째 모델 선택
+                # 혹시 위 목록이 없으면 음성/임베딩/구형8B 제외한 첫 모델 선택
                 for m_id in model_ids:
-                    if not any(skip in m_id.lower() for skip in ["whisper", "embed", "guard"]):
+                    skip_keywords = ["whisper", "embed", "guard", "llama3-8b"]
+                    if not any(skip in m_id.lower() for skip in skip_keywords):
                         return m_id
         except Exception:
             pass
-        return "llama3-8b-8192"
+        return "llama-3.3-70b-versatile"
 
     def generate_styling_advice(self, weather: dict, gender: str, rec_df: pd.DataFrame) -> str:
         if not self.api_key:
@@ -61,19 +61,19 @@ class GroqAIStylist:
         temp = weather.get("temp", 15)
         temp_diff = weather.get("temp_diff", 5)
 
-        prompt = f"""당신은 트렌디한 2030 무신사 패션 스타일리스트입니다.
-오늘의 실제 기상({city}, 현재 {temp}℃, 일교차 {temp_diff}℃)과 추천 1위 아이템들을 바탕으로 코디 브리핑을 작성하세요.
+        prompt = f"""당신은 무신사 공식 패션 에디터입니다.
+오늘 {city} 날씨(현재 기온 {temp}℃, 일교차 {temp_diff}℃)에 맞춰 선별된 아래 3개 아이템의 스타일링 가이드를 작성해 주세요.
 
-[선정된 원픽 셋업]
-- 아우터: {fixed_outer}
-- 상의: {fixed_top}
-- 하의: {fixed_bottom}
+[확정된 코디 아이템]
+1. 아우터: {fixed_outer}
+2. 상의: {fixed_top}
+3. 하의: {fixed_bottom}
 
-[작성 요구사항]
-1. 위 셋업의 실제 브랜드명과 상품명을 정확히 언급하며 베스트 코디 조합을 제안하세요.
-2. 현재 기온({temp}℃)에 이 옷의 소재와 구성이 왜 어울리는지 2문장으로 설명하세요.
-3. 어울리는 신발이나 레이어드 연출 팁을 1문장 추가하세요.
-4. 불릿 포인트(-) 형식으로 깔끔하게 4줄 내외로 작성하세요."""
+[작성 규칙]
+- 위 3개 아이템의 실제 브랜드명과 상품명을 있는 그대로 인용하세요.
+- 현재 날씨와 기온({temp}℃)에 이 옷들의 소재와 조합이 왜 적절한지 설명하세요.
+- 어울리는 신발이나 레이어드 팁을 한 줄 덧붙이세요.
+- 한국어로 자연스럽고 깔끔하게 3~4개의 불릿 포인트(-)로 정리하세요."""
 
         active_model = self._get_active_model()
 
@@ -85,18 +85,18 @@ class GroqAIStylist:
         payload = {
             "model": active_model,
             "messages": [
-                {"role": "system", "content": "당신은 무신사 실시간 랭킹 의류를 매칭해 주는 패션 에디터입니다."},
+                {"role": "system", "content": "당신은 한국어 패션 매거진 에디터입니다. 반드시 자연스러운 한국어로만 답변하십시오."},
                 {"role": "user", "content": prompt}
             ],
-            "temperature": 0.4,
-            "max_tokens": 500
+            "temperature": 0.3,
+            "max_tokens": 800
         }
 
         try:
-            res = requests.post(self.chat_url, headers=headers, json=payload, timeout=15)
+            res = requests.post(self.chat_url, headers=headers, json=payload, timeout=20)
             if res.status_code != 200:
-                return f"❌ Groq 응답 오류 ({res.status_code}) [모델: {active_model}]: {res.text}"
-            
+                return f"❌ Groq 응답 오류 ({res.status_code}) [선택모델: {active_model}]: {res.text}"
+
             result_json = res.json()
             return result_json["choices"][0]["message"]["content"]
         except Exception as e:
